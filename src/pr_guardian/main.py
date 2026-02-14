@@ -1,15 +1,16 @@
 # src/pr_guardian/main.py
 
+import json
+import asyncio
+import os
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from .graph import app_graph
 from fastapi.middleware.cors import CORSMiddleware
-import asyncio
-import os
 
-# Load environment variables from the root .env file
 env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
@@ -34,13 +35,10 @@ def read_root():
 
 def check_model_keys(model_name: str):
     # Check if the required API key for a model is present.
-    # Standardized to HUGGINGFACE_API_KEY to resolve the mismatch.
     if model_name.startswith("hf/") and not os.getenv("HUGGINGFACE_API_KEY"):
         return False, "Missing HUGGINGFACE_API_KEY"
     if model_name == "together" and not os.getenv("TOGETHER_API_KEY"):
         return False, "Missing TOGETHER_API_KEY"
-    if "claude" in model_name and not os.getenv("ANTHROPIC_API_KEY"):
-        return False, "Missing ANTHROPIC_API_KEY"
     if model_name == "groq" and not os.getenv("GROQ_API_KEY"):
         return False, "Missing GROQ_API_KEY"
     if model_name == "gpt-4o" and not os.getenv("OPENAI_API_KEY"):
@@ -64,12 +62,31 @@ async def run_model(code: str, model_name: str, thread_id: str):
 
     try:
         result = await app_graph.ainvoke(initial_state, config=config)
-        reviews = result.get("reviews", {})
+        
+        # If the graph fails completely, it returns None. 
+        # We must catch this before trying to use .get()
+        if result is None:
+            return model_name, "ERROR: Graph execution collapsed (returned None)."
+            
+        # Safely extract reviews with a double-fallback
+        reviews = result.get("reviews")
+        if reviews is None:
+            return model_name, "ERROR: State 'reviews' is None."
+            
         content = reviews.get(model_name, "No output returned.")
     except Exception as e:
         content = f"ERROR: {str(e)}"
 
     return model_name, content
+
+async def stream_reviews_generator(code: str, model_names: list[str], thread_id: str):
+    # Generator that yields SSE-formatted strings as models finish.
+    tasks = [run_model(code, m, thread_id) for m in model_names]
+    
+    # Process tasks as they complete
+    for future in asyncio.as_completed(tasks):
+        model_name, content = await future
+        yield f"data: {json.dumps({'model': model_name, 'review': content})}\n\n"
 
 @app.post("/review")
 async def review_code(request: ReviewRequest):
@@ -78,14 +95,7 @@ async def review_code(request: ReviewRequest):
     if not request.model_names:
         raise HTTPException(status_code=400, detail="No models selected.")
 
-    tasks = [run_model(request.code, model_name, thread_id) for model_name in request.model_names]
-    results = await asyncio.gather(*tasks)
-
-    reviews_dict = {model_name: content for model_name, content in results}
-
-    # Final report collation
-    final_report = "\n\n".join(
-        f"## Review from **{model}**\n{txt}" for model, txt in reviews_dict.items()
+    return StreamingResponse(
+        stream_reviews_generator(request.code, request.model_names, thread_id),
+        media_type="text/event-stream"
     )
-
-    return {"report": final_report, "reviews": reviews_dict}

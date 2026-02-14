@@ -3,6 +3,11 @@
 # Flag to track if we started Ollama ourselves
 OLLAMA_STARTED_BY_SCRIPT=false
 
+# --- CONFIGURATION ---
+# Define the models you want to ensure are downloaded
+REQUIRED_MODELS=("llama3")
+# ---------------------
+
 cleanup() {
     echo ""
     echo "🛑 Stopping PR Guardian Suite..."
@@ -26,8 +31,9 @@ echo "🚀 Starting PR Guardian Suite..."
 echo "Cleaning up old sessions..."
 fuser -k 8000/tcp 8501/tcp 2>/dev/null
 
+# 1. Start or Verify Ollama
 if curl -s http://127.0.0.1:11434/api/tags > /dev/null; then
-    echo "ℹ️ Ollama is already running. Skipping initialization."
+    echo "ℹ️ Ollama is already running."
 else
     if command -v ollama &> /dev/null; then
         echo "Starting Ollama (Local LLM Server)..."
@@ -39,17 +45,29 @@ else
     fi
 fi
 
+# 2. Verify Models are Downloaded (Fixes the 404 Error)
+if command -v ollama &> /dev/null; then
+    for model in "${REQUIRED_MODELS[@]}"; do
+        if ollama list | grep -q "$model"; then
+            echo "Model '$model' is already installed."
+        else
+            echo "Model '$model' not found. Pulling now..."
+            ollama pull "$model"
+        fi
+    done
+fi
+
+# 3. Start Backend (FastAPI)
 echo "Starting Backend (FastAPI)..."
-# We use 0.0.0.0 to ensure the GUI can reach it across local network protocols
 PYTHONPATH=src uv run uvicorn pr_guardian.main:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 
-# Wait for Backend to be ready
 echo "Waiting for Backend to initialize..."
 until curl -s http://127.0.0.1:8000/ > /dev/null; do
   sleep 1
 done
 
+# 4. Start Frontend (Streamlit)
 echo "Starting Frontend (Streamlit)..."
 uv run streamlit run gui.py --server.port 8501 &
 FRONTEND_PID=$!
