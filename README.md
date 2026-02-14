@@ -1,63 +1,46 @@
-🛡️ PR Guardian: AI Code Reviewer
+# 🛡️ PR Guardian: AI Code Reviewer
 
-PR Guardian is a multi-agent AI system designed to perform automated code reviews. It utilizes LangGraph to coordinate specialized agents (Security, Style, and Logic) to audit your Python code before it hits production. It supports cloud models (OpenAI, Groq) and fully local models via Ollama.
-🚀 Quick Start
-1. Prerequisites
+PR Guardian is a multi-agent AI system built with **LangGraph** to perform automated code security audits. It orchestrates multiple LLMs simultaneously to provide a comprehensive review of your Python code.
 
-    Python 3.12+
+## 🚀 Key Features
+- **Multi-Model Audit**: Compare results from OpenAI (GPT-4o), Groq (Llama 3.3), and Local Models.
+- **Local LLM Support**: Fully private audits using Ollama (Llama 3.1 & 3.2).
+- **LangGraph Orchestration**: Uses a stateful graph to manage the "Security Reviewer" and "Report Aggregator" nodes.
+- **Safety Limits**: GUI restricted to **3 simultaneous models** to ensure stable performance.
 
-    Ollama (for local Llama 3.1 support)
+## 🛠️ Setup
 
-    API Keys: You will need at least one key (OpenAI or Groq) to use cloud models.
-
-2. Installation
-
-We have provided an automated installer that sets up your Python environment, installs uv, and pulls the necessary local LLM manifests.
-Bash
-
+### 1. Installation
+Run the automated installer to set up `uv`, dependencies, and local models:
+```bash
 chmod +x install.sh
 ./install.sh
 
-3. Set Your API Keys
+2. Configuration
 
-After running the installer, a .env file will be created in your root directory. Open it and add your credentials:
+Add your API keys to the .env file:
+
+    OPENAI_API_KEY
+
+    GROQ_API_KEY
+
+    HUGGINGFACE_API_KEY (Optional, for HF Router models)
+
+3. Usage
+
+Launch the entire suite (API + GUI) with one command:
 Bash
 
-# .env file
-OPENAI_API_KEY=sk-your-key-here
-GROQ_API_KEY=gsk-your-key-here
-
-4. Running the App
-
-The application consists of a FastAPI backend and a Streamlit frontend. Use the launch script to start both simultaneously:
-Bash
-
-chmod +x launch.sh
 ./launch.sh
 
-    Frontend UI: http://127.0.0.1:8501
+    GUI: http://localhost:8501
 
-    Backend API: http://127.0.0.1:8000
+    API: http://localhost:8000
 
-🧠 Supported Models
-Provider	Model Tag	Best For
-OpenAI	gpt-4o	Deep reasoning and logic audits.
-Groq	llama-3.3-70b	Lightning-fast reviews (Free Tier).
-Ollama	llama3.1	100% Private, offline code analysis.
 📂 Project Structure
 
-    src/pr_guardian/main.py: The FastAPI entry point.
+    src/pr_guardian/graph.py: The LangGraph "brain" that routes requests to models.
 
-    src/pr_guardian/graph.py: The LangGraph logic (The "Brain").
+    gui.py: Streamlit interface with a 3-model selection limit.
 
-    gui.py: The Streamlit dashboard.
-
-    install.sh: Full environment and dependency setup.
-
-    launch.sh: Multi-process orchestrator.
-
-⚠️ Important Notes
-
-    Local Performance: Running llama3.1 locally requires at least 8GB of VRAM (GPU) or 16GB of System RAM (CPU) for smooth performance.
-
-    Thread ID: The "Thread ID" in the sidebar allows the AI to maintain memory of your code changes. Using the same ID lets the agents remember previous context.
+    main.py: FastAPI backend that streams reviews via SSE.
