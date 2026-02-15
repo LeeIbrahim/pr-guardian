@@ -8,13 +8,23 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from .graph import app_graph
+from .graph import app_graph, _build_graph
 from fastapi.middleware.cors import CORSMiddleware
+from langgraph.checkpoint.memory import MemorySaver
+
 
 env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
 app = FastAPI(title="PR Guardian API")
+memory = MemorySaver()
+graph = _build_graph().compile(checkpointer=memory)
+
+class ReviewRequest(BaseModel):
+    code: str
+    model_names: list[str]
+    thread_id: str
+    is_chat: bool = False
 
 app.add_middleware(
     CORSMiddleware,
@@ -58,7 +68,7 @@ async def run_model(code: str, model_name: str, thread_id: str):
         }
     }
 
-    initial_state = {"code": code, "reviews": {}}
+    initial_state = {"code": code, "reviews": {}, "messages": []}
 
     try:
         result = await app_graph.ainvoke(initial_state, config=config)

@@ -5,11 +5,19 @@ import os
 from typing import Dict, TypedDict, Annotated
 
 from langgraph.graph import StateGraph, END
+from langgraph.graph.message import add_messages
+from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
 from langchain_ollama import OllamaLLM
 from huggingface_hub import AsyncInferenceClient
+
+class AgentState(TypedDict):
+    messages: Annotated[list[BaseMessage], add_messages]
+    code: str
+    reviews: Annotated[dict, merge_reviews]
+    final_report: str
 
 # Merge function to safely update the state dictionary
 def merge_reviews(existing: dict, new: dict) -> dict:
@@ -28,7 +36,7 @@ def get_model(model_name: str):
     # Local Llama via Ollama (No API Key needed)
     if m_name.startswith("local/"):
         local_model = m_name.split("/", 1)[1]
-        
+
         if ":" not in local_model:
             local_model = f"{local_model}:latest"
 
@@ -99,6 +107,7 @@ def _build_graph():
     workflow.add_edge("reviewer", "final")
     workflow.add_edge("final", END)
 
-    return workflow.compile()
+    # Return the UNCOMPILED workflow so main.py can add a checkpointer
+    return workflow
 
-app_graph = _build_graph()
+app_graph = _build_graph().compile()

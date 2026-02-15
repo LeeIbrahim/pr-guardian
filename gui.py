@@ -12,7 +12,7 @@ def get_hf_status(model_id: str):
     repo_id = model_id.split("/", 1)[1]
     api_url = f"https://router.huggingface.co/hf-inference/models/{repo_id}"
     hf_key = os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
-    headers = {"Authorization": f("Bearer {hf_key}")}
+    headers = {"Authorization": f"Bearer {hf_key}"}
     
     try:
         payload = {"inputs": "ping", "parameters": {"max_new_tokens": 1}, "use_cache": True}
@@ -53,6 +53,64 @@ with st.sidebar:
         for label in selected_labels:
             st.caption(f"**{label}**: {get_hf_status(model_options[label])}")
 
+    # --- SIDEBAR CHAT SECTION ---
+    st.divider()
+    st.subheader("💡 Feature Suggestions")
+    
+    chat_model_label = st.selectbox(
+        "Chat Model:",
+        options=list(model_options.keys()),
+        key="chat_model_selection"
+    )
+    chat_model_id = model_options[chat_model_label]
+
+    # Persistent Chat Container in Sidebar
+    chat_container = st.container(height=350)
+    
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+    with chat_container:
+        for message in st.session_state.chat_history:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+    CHAT_THREAD_ID = "sidebar_feature_chat_v1"
+
+    if chat_prompt := st.chat_input("Suggest a feature...", key="sidebar_chat_input"):
+        with chat_container:
+            with st.chat_message("user"):
+                st.markdown(chat_prompt)
+        st.session_state.chat_history.append({"role": "user", "content": chat_prompt})
+
+        with chat_container:
+            with st.chat_message("assistant"):
+                response_placeholder = st.empty()
+                full_response = ""
+                
+                chat_payload = {
+                    "code": chat_prompt, 
+                    "thread_id": CHAT_THREAD_ID,
+                    "model_names": [chat_model_id],
+                    "is_chat": True
+                }
+
+                try:
+                    with requests.post("http://127.0.0.1:8000/review", json=chat_payload, stream=True) as r:
+                        for line in r.iter_lines():
+                            if line:
+                                decoded_line = line.decode('utf-8') if hasattr(line, 'decode') else line
+                                if decoded_line.startswith("data: "):
+                                    data = json.loads(decoded_line.replace("data: ", ""))
+                                    full_response += data['review']
+                                    response_placeholder.markdown(full_response + "▌")
+                        
+                        response_placeholder.markdown(full_response)
+                        st.session_state.chat_history.append({"role": "assistant", "content": full_response})
+                except Exception as e:
+                    st.error(f"Chat Error: {e}")
+
+# --- MAIN AUDIT PAGE ---
 if not selected_ids:
     st.header("PR Guardian")
     st.info("Select a model in the sidebar to begin.")
@@ -68,10 +126,8 @@ if st.button("Run Multi-Model Audit"):
         st.divider()
         completed_count = 0
         total_models = len(selected_ids)
-        
         progress_bar = st.progress(0, text="Initializing requests...")
         
-        # Create UI columns for the models
         cols = st.columns(total_models)
         placeholders = {}
         for idx, m_id in enumerate(selected_ids):
@@ -82,13 +138,11 @@ if st.button("Run Multi-Model Audit"):
 
         payload = {
             "code": code_input,
-            "thread_id": "user-session-123",
+            "thread_id": "audit-session-" + str(hash(code_input))[:8],
             "model_names": selected_ids
         }
 
         try:
-            # The backend handles all the async/parallel work
-            # The GUI just listens to the stream
             with requests.post("http://127.0.0.1:8000/review", json=payload, stream=True) as r:
                 for line in r.iter_lines():
                     if line:
