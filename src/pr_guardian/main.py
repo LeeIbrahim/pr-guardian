@@ -80,13 +80,16 @@ async def run_model(code: str, model_name: str, thread_id: str):
     return model_name, content
 
 async def stream_reviews_generator(code: str, model_names: list[str], thread_id: str):
-    # Generator that yields SSE-formatted strings as models finish.
+    # This runs models in parallel and yields whichever finishes first
     tasks = [run_model(code, m, thread_id) for m in model_names]
     
-    # Process tasks as they complete
     for future in asyncio.as_completed(tasks):
-        model_name, content = await future
-        yield f"data: {json.dumps({'model': model_name, 'review': content})}\n\n"
+        try:
+            model_name, content = await future
+            # Correct SSE format: "data: {json}\n\n"
+            yield f"data: {json.dumps({'model': model_name, 'review': content})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'model': 'system', 'review': f'Error: {str(e)}'})}\n\n"
 
 @app.post("/review")
 async def review_code(request: ReviewRequest):
