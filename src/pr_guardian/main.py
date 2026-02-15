@@ -8,23 +8,24 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from .graph import app_graph, _build_graph
+from .graph import _build_graph #
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.memory import MemorySaver
-
 
 env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
 app = FastAPI(title="PR Guardian API")
 memory = MemorySaver()
-graph = _build_graph().compile(checkpointer=memory)
+
+# FIX: Compile using the builder function to define app_graph
+app_graph = _build_graph().compile(checkpointer=memory)
 
 class ReviewRequest(BaseModel):
     code: str
-    model_names: list[str]
     thread_id: str
-    is_chat: bool = False
+    model_names: list[str] = ["gpt-4o"]
+    sequential: bool = False #
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,81 +35,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class ReviewRequest(BaseModel):
-    code: str
-    thread_id: str
-    model_names: list[str] = ["gpt-4o"]
-
 @app.get("/")
 def read_root():
+    # FIX: Ensure the key matches the test expectation ("message")
     return {"message": "PR Guardian API is online"}
 
-def check_model_keys(model_name: str):
-    # Check if the required API key for a model is present.
-    if model_name.startswith("hf/") and not os.getenv("HUGGINGFACE_API_KEY"):
-        return False, "Missing HUGGINGFACE_API_KEY"
-    if model_name == "together" and not os.getenv("TOGETHER_API_KEY"):
-        return False, "Missing TOGETHER_API_KEY"
-    if model_name == "groq" and not os.getenv("GROQ_API_KEY"):
-        return False, "Missing GROQ_API_KEY"
-    if model_name == "gpt-4o" and not os.getenv("OPENAI_API_KEY"):
-        return False, "Missing OPENAI_API_KEY"
-    return True, None
-
 async def run_model(code: str, model_name: str, thread_id: str):
-    # Runs a single model and returns (model_name, review or error).
-    has_key, key_error = check_model_keys(model_name)
-    if not has_key:
-        return model_name, f"ERROR: {key_error}"
-
-    config = {
-        "configurable": {
-            "thread_id": thread_id,
-            "model_name": model_name
-        }
-    }
-
+    config = {"configurable": {"thread_id": thread_id, "model_name": model_name}}
+    # We pass the same thread_id so models share memory in sequential mode
     initial_state = {"code": code, "reviews": {}, "messages": []}
 
     try:
         result = await app_graph.ainvoke(initial_state, config=config)
-        
-        # If the graph fails completely, it returns None. 
-        # We must catch this before trying to use .get()
         if result is None:
-            return model_name, "ERROR: Graph execution collapsed (returned None)."
-            
-        # Safely extract reviews with a double-fallback
-        reviews = result.get("reviews")
-        if reviews is None:
-            return model_name, "ERROR: State 'reviews' is None."
-            
+            return model_name, "ERROR: Graph returned None."
+        reviews = result.get("reviews", {})
         content = reviews.get(model_name, "No output returned.")
     except Exception as e:
         content = f"ERROR: {str(e)}"
-
     return model_name, content
 
-async def stream_reviews_generator(code: str, model_names: list[str], thread_id: str):
-    # This runs models in parallel and yields whichever finishes first
-    tasks = [run_model(code, m, thread_id) for m in model_names]
-    
-    for future in asyncio.as_completed(tasks):
-        try:
-            model_name, content = await future
-            # Correct SSE format: "data: {json}\n\n"
+async def stream_reviews_generator(request: ReviewRequest):
+    if request.sequential:
+        # Sequential: Models run one after another
+        for m_name in request.model_names:
+            model_name, content = await run_model(request.code, m_name, request.thread_id)
             yield f"data: {json.dumps({'model': model_name, 'review': content})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'model': 'system', 'review': f'Error: {str(e)}'})}\n\n"
+    else:
+        # Parallel: Models run concurrently
+        tasks = [run_model(request.code, m, request.thread_id) for m in request.model_names]
+        for future in asyncio.as_completed(tasks):
+            model_name, content = await future
+            yield f"data: {json.dumps({'model': model_name, 'review': content})}\n\n"
 
 @app.post("/review")
 async def review_code(request: ReviewRequest):
-    thread_id = request.thread_id.strip() or "default_session"
-
     if not request.model_names:
         raise HTTPException(status_code=400, detail="No models selected.")
-
     return StreamingResponse(
-        stream_reviews_generator(request.code, request.model_names, thread_id),
+        stream_reviews_generator(request),
         media_type="text/event-stream"
     )

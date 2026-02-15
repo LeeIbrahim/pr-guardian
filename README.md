@@ -1,46 +1,33 @@
-# 🛡️ PR Guardian: AI Code Reviewer
+# 🛡️ PR Guardian
 
-PR Guardian is a multi-agent AI system built with **LangGraph** to perform automated code security audits. It orchestrates multiple LLMs simultaneously to provide a comprehensive review of your Python code.
+PR Guardian is a multi-model code security auditor that leverages LangGraph to chain local and cloud-based LLMs. It identifies vulnerabilities, cross-references findings, and detects false positives using a sequential audit strategy.
 
-## 🚀 Key Features
-- **Multi-Model Audit**: Compare results from OpenAI (GPT-4o), Groq (Llama 3.3), and Local Models.
-- **Local LLM Support**: Fully private audits using Ollama (Llama 3.1 & 3.2).
-- **LangGraph Orchestration**: Uses a stateful graph to manage the "Security Reviewer" and "Report Aggregator" nodes.
-- **Safety Limits**: GUI restricted to **3 simultaneous models** to ensure stable performance.
+## ✨ Features
 
-## 🛠️ Setup
+- **Side-by-Side Audits**: View results from multiple models simultaneously in a scrollable grid.
+- **Sequential Mode**: Models review the code AND the findings of previous models to identify false positives.
+- **Individual Reruns**: If a single model fails due to a timeout or API error, rerun just that model without restarting the whole audit.
+- **Multi-Provider Support**:
+    - OpenAI (GPT-4o)
+    - Groq (Llama 3.3)
+    - Local (Ollama: Llama 3.2, DeepSeek R1)
+    - Hugging Face Inference API (Phi-3)
+- **Memory-Persistent**: Uses `MemorySaver` to track conversation threads across reruns.
 
-### 1. Installation
-Run the automated installer to set up `uv`, dependencies, and local models:
+## 🚀 Getting Started
+
+### 1. Prerequisites
+- Python 3.12+
+- [Ollama](https://ollama.com/) (for local models)
+- API Keys for OpenAI, Groq, or Hugging Face (stored in `.env`)
+
+### 2. Installation
 ```bash
-chmod +x install.sh
-./install.sh
+# Install dependencies
+uv sync
 
-2. Configuration
+# Start the FastAPI Backend
+uv run fastapi dev src/pr_guardian/main.py
 
-Add your API keys to the .env file:
-
-    OPENAI_API_KEY
-
-    GROQ_API_KEY
-
-    HUGGINGFACE_API_KEY (Optional, for HF Router models)
-
-3. Usage
-
-Launch the entire suite (API + GUI) with one command:
-Bash
-
-./launch.sh
-
-    GUI: http://localhost:8501
-
-    API: http://localhost:8000
-
-📂 Project Structure
-
-    src/pr_guardian/graph.py: The LangGraph "brain" that routes requests to models.
-
-    gui.py: Streamlit interface with a 3-model selection limit.
-
-    main.py: FastAPI backend that streams reviews via SSE.
+# Start the Streamlit GUI
+uv run streamlit run gui.py
