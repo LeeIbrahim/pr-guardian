@@ -1,78 +1,62 @@
-# src/pr_guardian/main.py
-
 import json
-import asyncio
-import os
-from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from dotenv import load_dotenv
-from .graph import _build_graph #
-from fastapi.middleware.cors import CORSMiddleware
-from langgraph.checkpoint.memory import MemorySaver
-
-env_path = Path(__file__).resolve().parent.parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
+from pydantic import BaseModel, Field, field_validator
+from typing import List, Optional
+from pr_guardian.graph import create_graph
 
 app = FastAPI(title="PR Guardian API")
-memory = MemorySaver()
-
-# FIX: Compile using the builder function to define app_graph
-app_graph = _build_graph().compile(checkpointer=memory)
 
 class ReviewRequest(BaseModel):
-    code: str
-    thread_id: str
-    model_names: list[str] = ["gpt-4o"]
-    sequential: bool = False #
+    code: str = Field(..., min_length=1, max_length=50000)
+    model_names: List[str] = Field(..., min_length=1, max_length=3)
+    user_message: Optional[str] = Field(None, max_length=1000)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], 
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    @field_validator("model_names")
+    @classmethod
+    def validate_models(cls, v: List[str]) -> List[str]:
+        # Constraint: No mistral references
+        for model in v:
+            if "mistral" in model.lower():
+                raise ValueError("Mistral models are restricted.")
+        return v
 
-@app.get("/")
-def read_root():
-    # FIX: Ensure the key matches the test expectation ("message")
-    return {"message": "PR Guardian API is online"}
-
-async def run_model(code: str, model_name: str, thread_id: str):
-    config = {"configurable": {"thread_id": thread_id, "model_name": model_name}}
-    # We pass the same thread_id so models share memory in sequential mode
-    initial_state = {"code": code, "reviews": {}, "messages": []}
-
-    try:
-        result = await app_graph.ainvoke(initial_state, config=config)
-        if result is None:
-            return model_name, "ERROR: Graph returned None."
-        reviews = result.get("reviews", {})
-        content = reviews.get(model_name, "No output returned.")
-    except Exception as e:
-        content = f"ERROR: {str(e)}"
-    return model_name, content
-
-async def stream_reviews_generator(request: ReviewRequest):
-    if request.sequential:
-        # Sequential: Models run one after another
-        for m_name in request.model_names:
-            model_name, content = await run_model(request.code, m_name, request.thread_id)
-            yield f"data: {json.dumps({'model': model_name, 'review': content})}\n\n"
-    else:
-        # Parallel: Models run concurrently
-        tasks = [run_model(request.code, m, request.thread_id) for m in request.model_names]
-        for future in asyncio.as_completed(tasks):
-            model_name, content = await future
-            yield f"data: {json.dumps({'model': model_name, 'review': content})}\n\n"
+@app.get("/models")
+async def get_available_models():
+    return {
+        "GPT-4o": "gpt-4o",
+        "Groq: Llama 3.3": "groq",
+        "Local: DeepSeek R1": "local/deepseek-r1:1.5b",
+        "Local: Llama 3.2": "local/llama3.2",
+    }
 
 @app.post("/review")
-async def review_code(request: ReviewRequest):
-    if not request.model_names:
-        raise HTTPException(status_code=400, detail="No models selected.")
-    return StreamingResponse(
-        stream_reviews_generator(request),
-        media_type="text/event-stream"
-    )
+async def run_review(request: ReviewRequest):
+    graph = create_graph()
+
+    async def event_generator():
+        initial_state = {
+            "code": request.code,
+            "user_message": request.user_message or "",
+            "reviews": {}, 
+            "final_report": "",
+        }
+
+        async for event in graph.astream(initial_state):
+            for _, output in event.items():
+                if "reviews" in output and output["reviews"]:
+                    reviews = output["reviews"]
+                    
+                    if isinstance(reviews, dict):
+                        # Stream each model's review as a separate SSE message
+                        for model_id, review_text in reviews.items():
+                            # Only stream if the model was actually requested
+                            if model_id in request.model_names:
+                                chunk = {"model": model_id, "review": review_text}
+                                yield f"data: {json.dumps(chunk)}\n\n"
+                    
+                    elif isinstance(reviews, list):
+                        chunk = {"model": request.model_names[0], "review": reviews[-1]}
+                        yield f"data: {json.dumps(chunk)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

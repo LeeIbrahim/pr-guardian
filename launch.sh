@@ -1,43 +1,51 @@
 #!/bin/bash
+# launch.sh
 
-# Configuration
-REQUIRED_MODELS=("llama3.1" "llama3.2")
 BACKEND_PORT=8000
 FRONTEND_PORT=8501
+UV="/home/forky/.local/bin/uv"
 
 cleanup() {
-    echo -e "\n🛑 Stopping PR Guardian..."
-    kill $BACKEND_PID $FRONTEND_PID 2>/dev/null
+    echo -e "\n🛑 Shutting down..."
+    sudo caddy stop 2>/dev/null
+    [ -n "$BACKEND_PID" ] && kill $BACKEND_PID 2>/dev/null
+    [ -n "$FRONTEND_PID" ] && kill $FRONTEND_PID 2>/dev/null
     exit
 }
+trap cleanup INT TERM
 
-trap cleanup SIGINT
-
-echo "🚀 Starting PR Guardian Suite..."
-
-# 1. Start Ollama if not running
-if ! curl -s http://127.0.0.1:11434/api/tags > /dev/null; then
-    echo "Starting Ollama server..."
-    ollama serve &
-    sleep 5
+if [ "$1" = "--test" ]; then
+    echo "🧪 Running ALL PR Guardian Tests..."
+    # Clear caches to prevent import mismatches
+    find . -name "__pycache__" -exec rm -rf {} +
+    rm -rf .pytest_cache
+    
+    sudo caddy start --config ./Caddyfile 2>/dev/null
+    PYTHONPATH=src $UV run pytest tests/ -v
+    
+    TEST_EXIT_CODE=$?
+    sudo caddy stop 2>/dev/null
+    exit $TEST_EXIT_CODE
 fi
 
-# 2. Check for required local models
-for model in "${REQUIRED_MODELS[@]}"; do
-    if ! ollama list | grep -q "$model"; then
-        echo "📥 Model $model not found. Pulling..."
-        ollama pull "$model"
-    fi
-done
+echo "🧹 Clearing ports..."
+sudo fuser -k 11435/tcp 8000/tcp 8501/tcp 2>/dev/null
 
-# 3. Launch Backend
-echo "Starting Backend (FastAPI) on port $BACKEND_PORT..."
-PYTHONPATH=src uv run uvicorn pr_guardian.main:app --host 0.0.0.0 --port $BACKEND_PORT &
+echo "🛡️ Starting Caddy Proxy..."
+sudo caddy start --config ./Caddyfile
+sleep 2
+
+echo "🚀 Launching Backend..."
+PYTHONPATH=src $UV run uvicorn pr_guardian.main:app \
+    --host 0.0.0.0 --port $BACKEND_PORT \
+    --ssl-keyfile ./key.pem --ssl-certfile ./cert.pem &
 BACKEND_PID=$!
 
-# 4. Launch Frontend
-echo "Starting Frontend (Streamlit) on port $FRONTEND_PORT..."
-uv run streamlit run gui.py --server.port $FRONTEND_PORT &
+echo "💻 Launching GUI..."
+$UV run streamlit run gui.py \
+    --server.port $FRONTEND_PORT \
+    --server.sslCertFile ./cert.pem \
+    --server.sslKeyFile ./key.pem &
 FRONTEND_PID=$!
 
 wait

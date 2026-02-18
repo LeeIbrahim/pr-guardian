@@ -1,89 +1,115 @@
-# src/pr_guardian/graph.py
-
-from __future__ import annotations
 import os
-from typing import Dict, TypedDict, Annotated
+import asyncio
+import httpx
+from typing import TypedDict, Dict
+from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END
-from langgraph.graph.message import add_messages
-from langchain_core.runnables import RunnableConfig
-from langchain_core.messages import BaseMessage
-from langchain_openai import ChatOpenAI
-from langchain_groq import ChatGroq
-from langchain_ollama import OllamaLLM
-from huggingface_hub import AsyncInferenceClient
 
-# Helper function to merge reviews into state
-def merge_reviews(existing: dict, new: dict) -> dict:
-    updated = existing.copy()
-    updated.update(new)
-    return updated
+load_dotenv()
 
-# Define the state shape
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
+SYSTEM_PROMPT = """You are an expert code reviewer. Analyze the provided code and give a thorough PR review covering:
+- Bugs and correctness issues
+- Security vulnerabilities
+- Performance concerns
+- Code quality and readability
+- Suggestions for improvement
+
+Format your response in clear markdown with sections."""
+
+
 class AgentState(TypedDict):
-    messages: Annotated[list[BaseMessage], add_messages]
     code: str
-    reviews: Annotated[dict, merge_reviews]
-    final_report: str
+    reviews: Dict[str, str]
+    user_message: str
 
-# Logic to route and initialize specific LLM instances
-def get_model(model_name: str):
-    m_name = model_name.lower()
-    
-    # Handle local models via Ollama
-    if m_name.startswith("local/"):
-        local_model = m_name.split("/", 1)[1]
-        if ":" not in local_model:
-            local_model = f"{local_model}:latest"
-        return OllamaLLM(model=local_model, base_url="http://127.0.0.1:11434")
-    
-    # Handle Groq Llama models
-    if m_name == "groq":
-        return ChatGroq(model_name="llama-3.3-70b-versatile")
-    
-    # Handle Hugging Face inference models
-    if m_name.startswith("hf/"):
-        repo_id = model_name.split("/", 1)[1]
-        return AsyncInferenceClient(model=repo_id, token=os.getenv("HUGGINGFACE_API_KEY"))
 
-    # Default to OpenAI models
-    return ChatOpenAI(model=m_name, temperature=0.1)
-
-# Primary node for performing code reviews
-async def review_node(state: AgentState, config: RunnableConfig) -> Dict:
-    model_name = config.get("configurable", {}).get("model_name", "gpt-4o")
-    existing_reviews = state.get("reviews", {})
-    
-    prompt = f"Audit this code for security vulnerabilities:\n\n{state['code']}"
-    
-    # Check for previous reviews to support sequential chaining
-    if existing_reviews:
-        context = "\n".join([f"- {m}: {c[:300]}..." for m, c in existing_reviews.items()])
-        prompt = (
-            f"Code:\n{state['code']}\n\n"
-            f"Previous findings:\n{context}\n\n"
-            f"Identify any FALSE POSITIVES from previous models and add new insights."
+async def call_openai(code: str, user_message: str) -> str:
+    prompt = f"{code}\n\n{user_message}" if user_message else code
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+            json={
+                "model": "gpt-4o",
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+            },
         )
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"]
 
-    try:
-        llm = get_model(model_name)
-        if model_name.startswith("hf/"):
-            resp = await llm.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=1024
-            )
-            content = resp.choices[0].message.content
+
+async def call_groq(code: str, user_message: str) -> str:
+    prompt = f"{code}\n\n{user_message}" if user_message else code
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+            json={
+                "model": "llama-3.3-70b-versatile",
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+            },
+        )
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"]
+
+
+async def call_ollama(model: str, code: str, user_message: str) -> str:
+    prompt = f"{code}\n\n{user_message}" if user_message else code
+    async with httpx.AsyncClient(timeout=120) as client:
+        response = await client.post(
+            f"{OLLAMA_BASE_URL}/api/chat",
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                "stream": False,
+            },
+        )
+        response.raise_for_status()
+        return response.json()["message"]["content"]
+
+
+async def run_all_reviews(code: str, user_message: str) -> Dict[str, str]:
+    """Run all four model calls concurrently."""
+    results = await asyncio.gather(
+        call_openai(code, user_message),
+        call_groq(code, user_message),
+        call_ollama("deepseek-r1:1.5b", code, user_message),
+        call_ollama("llama3.2", code, user_message),
+        return_exceptions=True,
+    )
+
+    model_ids = ["gpt-4o", "groq", "local/deepseek-r1:1.5b", "local/llama3.2"]
+    reviews = {}
+    for model_id, result in zip(model_ids, results):
+        if isinstance(result, Exception):
+            reviews[model_id] = f"Error calling model: {type(result).__name__}: {result}"
         else:
-            response = await llm.ainvoke(prompt)
-            content = response.content if hasattr(response, "content") else str(response)
-    except Exception as e:
-        content = f"ERROR: {str(e)}"
-        
-    return {"reviews": {model_name: content}}
+            reviews[model_id] = result
 
-# Graph construction
-def _build_graph():
+    return reviews
+
+
+async def code_reviewer(state: AgentState) -> dict:
+    reviews = await run_all_reviews(state["code"], state.get("user_message", ""))
+    return {"reviews": reviews}
+
+
+def create_graph():
     workflow = StateGraph(AgentState)
-    workflow.add_node("reviewer", review_node)
+    workflow.add_node("reviewer", code_reviewer)
     workflow.set_entry_point("reviewer")
     workflow.add_edge("reviewer", END)
-    return workflow
+    return workflow.compile()

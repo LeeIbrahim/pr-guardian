@@ -1,0 +1,10 @@
+# Caddyfile
+{
+    # Allows Caddy to use internal self-signed certs without a CA
+    local_certs
+}
+
+guardian.local:11435 {
+    reverse_proxy localhost:11434
+    tls internal
+}

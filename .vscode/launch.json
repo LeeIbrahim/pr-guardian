@@ -1,0 +1,44 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug FastAPI Backend",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "pr_guardian.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--ssl-keyfile",
+        "key.pem",
+        "--ssl-certfile",
+        "cert.pem"
+      ],
+      "env": {
+        "PYTHONPATH": "src"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Debug Streamlit GUI",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "streamlit",
+      "args": [
+        "run",
+        "gui.py",
+        "--server.port",
+        "8501",
+        "--server.sslCertFile",
+        "cert.pem",
+        "--server.sslKeyFile",
+        "key.pem"
+      ],
+      "console": "integratedTerminal"
+    }
+  ]
+}
