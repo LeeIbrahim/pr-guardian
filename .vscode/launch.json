@@ -15,16 +15,30 @@
         "--ssl-keyfile",
         "key.pem",
         "--ssl-certfile",
+<<<<<<< HEAD
         "cert.pem"
       ],
       "env": {
         "PYTHONPATH": "src"
       },
+=======
+        "cert.pem",
+        "--reload"
+      ],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "preLaunchTask": "Start Dev Services",
+>>>>>>> 1fc32dc (Updates to multiple files adding git and debugging)
       "console": "integratedTerminal",
       "justMyCode": false
     },
     {
+<<<<<<< HEAD
       "name": "Debug Streamlit GUI",
+=======
+      "name": "Debug Streamlit GUI (Standalone)",
+>>>>>>> 1fc32dc (Updates to multiple files adding git and debugging)
       "type": "debugpy",
       "request": "launch",
       "module": "streamlit",
@@ -38,7 +52,17 @@
         "--server.sslKeyFile",
         "key.pem"
       ],
+<<<<<<< HEAD
       "console": "integratedTerminal"
     }
   ]
 }
+=======
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "console": "integratedTerminal"
+    }
+  ]
+}
+>>>>>>> 1fc32dc (Updates to multiple files adding git and debugging)

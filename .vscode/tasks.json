@@ -1,0 +1,19 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Start Dev Services",
+            "type": "shell",
+            "command": "./launch_dev.sh",
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": { "regexp": "^.*$" },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Clearing GUI and Proxy ports",
+                    "endsPattern": "Dev Environment Ready!" 
+                }
+            }
+        }
+    ]
+}
