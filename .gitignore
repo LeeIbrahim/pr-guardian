@@ -20,7 +20,6 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg
-*.pem
 
 # Virtual Environments
 venv/
@@ -35,3 +34,9 @@ scripts/.local/
 .env
 .venv
 *.log
+
+# Secret files
+*.pem
+*.key
+*.crt
+client_secrets.json

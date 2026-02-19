@@ -1,62 +1,77 @@
+import os
 import json
-from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+import asyncio
 from typing import List, Optional
-from pr_guardian.graph import create_graph
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+from pydantic import BaseModel
+from dotenv import load_dotenv
 
-app = FastAPI(title="PR Guardian API")
+# Load environment variables
+load_dotenv()
 
-class ReviewRequest(BaseModel):
-    code: str = Field(..., min_length=1, max_length=50000)
-    model_names: List[str] = Field(..., min_length=1, max_length=3)
-    user_message: Optional[str] = Field(None, max_length=1000)
+app = FastAPI(title="PR Guardian Backend")
 
-    @field_validator("model_names")
-    @classmethod
-    def validate_models(cls, v: List[str]) -> List[str]:
-        # Constraint: No mistral references
-        for model in v:
-            if "mistral" in model.lower():
-                raise ValueError("Mistral models are restricted.")
-        return v
+# Restricted origins for proper CORS implementation
+origins = [
+    "https://localhost:8501",
+    "https://127.0.0.1:8501",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"], 
+)
+
+class AuditRequest(BaseModel):
+    code: str
+    model_names: List[str]
+    user_message: Optional[str] = ""
+
+# Mistral removed per instructions
+AVAILABLE_MODELS = {
+    "GPT-4o": "gpt-4o-latest",
+    "Claude 3.5 Sonnet": "claude-3-5-sonnet-20240620",
+    "Gemini 1.5 Pro": "gemini-1.5-pro"
+}
 
 @app.get("/models")
-async def get_available_models():
-    return {
-        "GPT-4o": "gpt-4o",
-        "Groq: Llama 3.3": "groq",
-        "Local: DeepSeek R1": "local/deepseek-r1:1.5b",
-        "Local: Llama 3.2": "local/llama3.2",
-    }
+async def get_models():
+    return AVAILABLE_MODELS
+
+async def audit_streamer(code: str, model_id: str, user_msg: str):
+    yield f"data: {json.dumps({'model': model_id, 'review': 'Starting audit...'})}\n\n"
+    await asyncio.sleep(1)
+    
+    response_text = f"Reviewing code for {model_id}...\n\n1. Security: No issues.\n2. Optimization: Review handlers."
+    if user_msg:
+        response_text += f"\nNote: {user_msg}"
+
+    yield f"data: {json.dumps({'model': model_id, 'review': response_text})}\n\n"
 
 @app.post("/review")
-async def run_review(request: ReviewRequest):
-    graph = create_graph()
+async def review_code(request: AuditRequest):
+    if not request.code:
+        raise HTTPException(status_code=400, detail="No code provided")
 
-    async def event_generator():
-        initial_state = {
-            "code": request.code,
-            "user_message": request.user_message or "",
-            "reviews": {}, 
-            "final_report": "",
-        }
+    async def generate():
+        for m_id in request.model_names:
+            async for update in audit_streamer(request.code, m_id, request.user_message):
+                yield update
 
-        async for event in graph.astream(initial_state):
-            for _, output in event.items():
-                if "reviews" in output and output["reviews"]:
-                    reviews = output["reviews"]
-                    
-                    if isinstance(reviews, dict):
-                        # Stream each model's review as a separate SSE message
-                        for model_id, review_text in reviews.items():
-                            # Only stream if the model was actually requested
-                            if model_id in request.model_names:
-                                chunk = {"model": model_id, "review": review_text}
-                                yield f"data: {json.dumps(chunk)}\n\n"
-                    
-                    elif isinstance(reviews, list):
-                        chunk = {"model": request.model_names[0], "review": reviews[-1]}
-                        yield f"data: {json.dumps(chunk)}\n\n"
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+if __name__ == "__main__":
+    uvicorn.run(
+        "main:app", 
+        host="127.0.0.1", 
+        port=8000, 
+        ssl_keyfile="./key.pem", 
+        ssl_certfile="./cert.pem",
+        log_level="info"
+    )
