@@ -89,7 +89,3 @@ You must also place a `client_secrets.json` file in your root folder.
 3.  Configure the **OAuth Consent Screen**.
 4.  Create **OAuth 2.0 Client IDs** (Desktop or Web application).
 5.  Download the JSON and rename it to `client_secrets.json`.
-
----
-
-**Would you like me to help you generate a Python script to validate your .env keys and connection to these services?**

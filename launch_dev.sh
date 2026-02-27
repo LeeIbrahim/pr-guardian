@@ -5,7 +5,7 @@ GUI_PORT=8501
 UV="/home/forky/.local/bin/uv"
 
 cleanup() {
-    echo -e "\n🛑 Shutting down Dev Services..."
+    echo -e "\n Shutting down Dev Services..."
     [ -n "$GUI_PID" ] && kill $GUI_PID 2>/dev/null
     exit
 }
