@@ -1,113 +1,118 @@
-# graph.py
+# gui.py
+import streamlit as st
+import requests
+import json
 import os
-import asyncio
-import httpx
-from typing import TypedDict, Dict
+import urllib3
+import io
 from dotenv import load_dotenv
-from langgraph.graph import StateGraph, END
+from google_auth_oauthlib.flow import Flow
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+
+# Suppress warnings for self-signed certificates
+# TODO: WARNING - This is not recommended for production environments. Ensure proper SSL certificates are in place for secure communication.
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+if "available_models" not in st.session_state:
+    st.session_state.available_models = {}
+if "credentials" not in st.session_state:
+    st.session_state.credentials = None
+if "drive_files" not in st.session_state:
+    st.session_state.drive_files = [] 
+if "drive_current_folder" not in st.session_state:
+    st.session_state.drive_current_folder = 'root'
+if "drive_folder_stack" not in st.session_state:
+    st.session_state.drive_folder_stack = []
+if "show_explorer" not in st.session_state:
+    st.session_state.show_explorer = False
+if "audit_results" not in st.session_state:
+    st.session_state.audit_results = ""
 
-SYSTEM_PROMPT = """You are an expert code reviewer. Analyze the provided code and give a thorough PR review covering:
-- Bugs and correctness issues
-- Security vulnerabilities
-- Performance concerns
-- Code quality and readability
-- Suggestions for improvement
+st.set_page_config(page_title="PR Guardian", page_icon="🛡️", layout="wide")
 
-Format your response in clear markdown with sections."""
+BACKEND_URL = os.getenv("BACKEND_URL", "https://127.0.0.1:8000")
+SUPPORTED_EXTENSIONS = (".py", ".rs", ".cpp", ".hpp", ".c", ".h", ".php", ".cs", ".js", ".jsx", ".ts", ".tsx", ".bas", ".vb", ".java", ".go")
 
-class AgentState(TypedDict):
-    code: str
-    reviews: Dict[str, str]
-    user_message: str
+def fetch_models():
+    try:
+        resp = requests.get(f"{BACKEND_URL}/models", verify=False, timeout=5)
+        if resp.status_code == 200:
+            st.session_state.available_models = resp.json()
+    except Exception:
+        pass
 
-async def call_openai(code: str, user_message: str) -> str:
-    prompt = f"{code}\n\n{user_message}" if user_message else code
-    async with httpx.AsyncClient(timeout=90) as client:
-        response = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
-            json={
-                "model": "gpt-4o",
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-            },
+if not st.session_state.available_models:
+    fetch_models()
+
+st.title("🛡️ PR Guardian")
+
+with st.container(border=True):
+    if st.session_state.available_models:
+        model_options = list(st.session_state.available_models.keys())
+        selected_labels = st.multiselect(
+            "Select Models for Review", 
+            options=model_options, 
+            default=[model_options[0]] if model_options else None,
+            label_visibility="collapsed"
         )
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
+        selected_ids = [st.session_state.available_models[l] for l in selected_labels]
+    else:
+        st.warning("📡 No models detected. Ensure the backend is running.")
+        if st.button("🔌 Reconnect to Backend"):
+            fetch_models()
+            st.rerun()
+        selected_ids = []
 
-async def call_groq(code: str, user_message: str) -> str:
-    prompt = f"{code}\n\n{user_message}" if user_message else code
-    async with httpx.AsyncClient(timeout=90) as client:
-        response = await client.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
-            json={
-                "model": "llama-3.3-70b-versatile",
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-            },
-        )
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
+st.divider()
 
-async def call_ollama(model: str, code: str, user_message: str) -> str:
-    prompt = f"{code}\n\n{user_message}" if user_message else code
-    # Specific timeout object to allow local models up to 5 minutes to generate
-    custom_timeout = httpx.Timeout(300.0, connect=10.0, read=300.0)
-    async with httpx.AsyncClient(timeout=custom_timeout) as client:
-        try:
-            response = await client.post(
-                f"{OLLAMA_BASE_URL}/api/chat",
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "stream": False,
-                },
-            )
-            response.raise_for_status()
-            return response.json()["message"]["content"]
-        except Exception as e:
-            return f"Error calling {model}: {str(e)}"
+# Input Selection
+col_l, col_g, col_d = st.columns(3)
+with col_l:
+    st.subheader("📁 Local")
+    uploaded_files = st.file_uploader("Upload", accept_multiple_files=True, label_visibility="collapsed")
 
-async def run_all_reviews(code: str, user_message: str) -> Dict[str, str]:
-    # Running all models concurrently using asyncio.gather
-    results = await asyncio.gather(
-        call_openai(code, user_message),
-        call_groq(code, user_message),
-        call_ollama("deepseek-r1:1.5b", code, user_message),
-        call_ollama("llama3.2", code, user_message),
-        return_exceptions=True,
-    )
+with col_g:
+    st.subheader("🌐 GitHub")
+    repo_path = st.text_input("Repo Path", placeholder="owner/repo", label_visibility="collapsed")
 
-    model_ids = ["gpt-4o", "groq", "local/deepseek-r1:1.5b", "local/llama3.2"]
-    reviews = {}
-    for model_id, result in zip(model_ids, results):
-        if isinstance(result, Exception):
-            reviews[model_id] = f"Error: {str(result)}"
+with col_d:
+    st.subheader("☁️ Drive")
+    if st.session_state.credentials:
+        if st.button("📂 Browse Files", use_container_width=True):
+            st.session_state.show_explorer = True
+    else:
+        st.info("Log in to Drive to browse files.")
+
+st.divider()
+audit_instructions = st.text_area("Audit Instructions (Optional)", height=100)
+
+_, mid, _ = st.columns([0.3, 0.4, 0.3])
+with mid:
+    if st.button("🚀 Run Audit", type="primary", use_container_width=True):
+        combined_code = ""
+
+        if not combined_code:
+            st.error("No code staged for review.")
+        elif not selected_ids:
+            st.warning("Please select at least one model.")
         else:
-            reviews[model_id] = result
-    return reviews
+            st.session_state.audit_results = ""
+            results_area = st.empty()
+            payload = {"code": combined_code, "model_names": selected_ids, "user_message": audit_instructions}
+            try:
+                with requests.post(f"{BACKEND_URL}/review", json=payload, stream=True, verify=False) as r:
+                    if r.status_code == 200:
+                        for line in r.iter_lines():
+                            if line:
+                                data = json.loads(line.decode('utf-8').replace("data: ", ""))
+                                st.session_state.audit_results += f"### 🤖 Model: {data['model']}\n{data['review']}\n\n"
+                                results_area.markdown(st.session_state.audit_results)
+            except Exception as e:
+                st.error(f"Audit failed: {e}")
 
-async def code_reviewer(state: AgentState) -> dict:
-    reviews = await run_all_reviews(state["code"], state.get("user_message", ""))
-    return {"reviews": reviews}
-
-def create_graph():
-    workflow = StateGraph(AgentState)
-    workflow.add_node("reviewer", code_reviewer)
-    workflow.set_entry_point("reviewer")
-    workflow.add_edge("reviewer", END)
-    return workflow.compile()
+if st.session_state.audit_results and not mid:
+    st.markdown("---")
+    st.markdown(st.session_state.audit_results)

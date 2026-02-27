@@ -14,20 +14,6 @@ cleanup() {
 }
 trap cleanup INT TERM
 
-if [ "$1" = "--test" ]; then
-    echo "🧪 Running ALL PR Guardian Tests..."
-    # Clear caches to prevent import mismatches
-    find . -name "__pycache__" -exec rm -rf {} +
-    rm -rf .pytest_cache
-    
-    sudo caddy start --config ./Caddyfile 2>/dev/null
-    PYTHONPATH=src $UV run pytest tests/ -v
-    
-    TEST_EXIT_CODE=$?
-    sudo caddy stop 2>/dev/null
-    exit $TEST_EXIT_CODE
-fi
-
 echo "🧹 Clearing ports..."
 sudo fuser -k 11435/tcp 8000/tcp 8501/tcp 2>/dev/null
 
@@ -35,9 +21,17 @@ echo "🛡️ Starting Caddy Proxy..."
 sudo caddy start --config ./Caddyfile
 sleep 2
 
+# Starting local llms
+echo "🦙 Checking Local Models (Ollama)..."
+ollama serve > /dev/null 2>&1 & # Starts Ollama in background if not running
+sleep 2
+ollama run deepseek-r1:1.5b "" # Pre-loads the model into VRAM
+ollama run llama3.2 ""
+
 echo "🚀 Launching Backend..."
-PYTHONPATH=src $UV run uvicorn pr_guardian.main:app \
-    --host 0.0.0.0 --port $BACKEND_PORT \
+# Pointing directly to main:app in the root directory
+$UV run uvicorn main:app \
+    --host 127.0.0.1 --port $BACKEND_PORT \
     --ssl-keyfile ./key.pem --ssl-certfile ./cert.pem &
 BACKEND_PID=$!
 
