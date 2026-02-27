@@ -21,6 +21,13 @@ echo "🛡️ Starting Caddy Proxy..."
 sudo caddy start --config ./Caddyfile
 sleep 2
 
+# Starting local llms
+echo "🦙 Checking Local Models (Ollama)..."
+ollama serve > /dev/null 2>&1 & # Starts Ollama in background if not running
+sleep 2
+ollama run deepseek-r1:1.5b "" # Pre-loads the model into VRAM
+ollama run llama3.2 ""
+
 echo "🚀 Launching Backend..."
 # Pointing directly to main:app in the root directory
 $UV run uvicorn main:app \

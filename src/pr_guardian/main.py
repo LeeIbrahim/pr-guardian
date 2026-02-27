@@ -1,3 +1,4 @@
+# main.py
 import os
 import json
 import asyncio
@@ -8,13 +9,13 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from .graph import create_graph
 
-# Load environment variables
 load_dotenv()
 
 app = FastAPI(title="PR Guardian Backend")
 
-# Restricted origins for proper CORS implementation
+# Restricted origins for CORS implementation 
 origins = [
     "https://localhost:8501",
     "https://127.0.0.1:8501",
@@ -33,36 +34,31 @@ class AuditRequest(BaseModel):
     model_names: List[str]
     user_message: Optional[str] = ""
 
-# Mistral removed per instructions
 AVAILABLE_MODELS = {
     "GPT-4o": "gpt-4o-latest",
-    "Claude 3.5 Sonnet": "claude-3-5-sonnet-20240620",
-    "Gemini 1.5 Pro": "gemini-1.5-pro"
+    "Grok 3": "grok-3",
+    "DeepSeek R1 (Local)": "local/deepseek-r1:1.5b",
+    "Llama 3.2 (Local)": "local/llama3.2"
 }
 
 @app.get("/models")
 async def get_models():
     return AVAILABLE_MODELS
 
-async def audit_streamer(code: str, model_id: str, user_msg: str):
-    yield f"data: {json.dumps({'model': model_id, 'review': 'Starting audit...'})}\n\n"
-    await asyncio.sleep(1)
-    
-    response_text = f"Reviewing code for {model_id}...\n\n1. Security: No issues.\n2. Optimization: Review handlers."
-    if user_msg:
-        response_text += f"\nNote: {user_msg}"
-
-    yield f"data: {json.dumps({'model': model_id, 'review': response_text})}\n\n"
-
 @app.post("/review")
 async def review_code(request: AuditRequest):
     if not request.code:
         raise HTTPException(status_code=400, detail="No code provided")
 
+    workflow = create_graph()
+
     async def generate():
-        for m_id in request.model_names:
-            async for update in audit_streamer(request.code, m_id, request.user_message):
-                yield update
+        inputs = {"code": request.code, "user_message": request.user_message}
+        result = await workflow.ainvoke(inputs)
+        
+        # Stream the individual model reviews back to the GUI 
+        for model_id, review_text in result["reviews"].items():
+            yield f"data: {json.dumps({'model': model_id, 'review': review_text})}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -72,6 +68,5 @@ if __name__ == "__main__":
         host="127.0.0.1", 
         port=8000, 
         ssl_keyfile="./key.pem", 
-        ssl_certfile="./cert.pem",
-        log_level="info"
+        ssl_certfile="./cert.pem"
     )

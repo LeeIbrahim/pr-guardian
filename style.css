@@ -78,3 +78,106 @@ h1, h3 {
     width: 100%;
     margin: 0 auto;
 }
+
+.staged-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 10px 0;
+}
+
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    border-radius: 12px !important;
+}
+
+.file-chip {
+    background-color: #f0f4f9;
+    border: 1px solid #d1d9e0;
+    border-radius: 16px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: #444746;
+}
+
+/* Explorer Row Styling */
+.explorer-row {
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+    transition: background-color 0.2s;
+}
+
+.explorer-row:hover {
+    background-color: #f8f9fa;
+}
+
+button[kind="headerNoContext"] {
+    background-color: #ff4b4b !important;
+    color: white !important;
+    border-radius: 50% !important;
+    left: 10px !important;
+    top: 10px !important;
+    z-index: 999999;
+}
+
+/* Constrain the Audit Button width */
+.stButton > button[kind="primary"] {
+    max-width: 400px;
+    margin: 0 auto;
+    display: block;
+}
+
+.staged-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 10px;
+}
+
+/* Constrain the audit button on wide screens */
+.audit-container {
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+/* File Grid Text Shadow for better legibility */
+.file-label {
+    font-size: 12px;
+    text-align: center;
+    overflow-wrap: break-word;
+}
+/* File Browser Card Styling */
+div[data-testid="stExpander"] {
+    border: none !important;
+    box-shadow: 0px 4px 12px rgba(0,0,0,0.1);
+}
+
+/* Handle sidebar collapse on small screens */
+@media (max-width: 768px) {
+    [data-testid="stSidebar"] {
+        display: none;
+    }
+}
+
+.stTextArea textarea {
+    border-radius: 10px !important;
+}
+
+/* Ensure the audit button is vertically centered with the text area */
+div[data-testid="column"]:has(button[kind="primary"]) {
+    display: flex;
+    align-items: flex-end;
+    padding-bottom: 4px;
+}
+
+/* Staged files chip styling */
+.staged-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding-bottom: 20px;
+}
