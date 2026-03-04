@@ -10,6 +10,6 @@ guardian.local:11435 {
 }
 
 # Force redirect for anyone trying to hit the GUI on HTTP (Optional but recommended)
-:8501 {
+:5173 {
     redir https://{host}{uri}
 }

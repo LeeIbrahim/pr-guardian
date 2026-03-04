@@ -30,7 +30,7 @@ ollama run llama3.2 ""
 
 echo "🚀 Launching Backend..."
 # Pointing directly to main:app in the root directory
-$UV run uvicorn main:app \
+$UV run uvicorn backend.main:app \
     --host 127.0.0.1 --port $BACKEND_PORT \
     --ssl-keyfile ./key.pem --ssl-certfile ./cert.pem &
 BACKEND_PID=$!
