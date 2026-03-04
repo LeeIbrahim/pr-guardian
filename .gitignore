@@ -40,3 +40,8 @@ scripts/.local/
 *.key
 *.crt
 client_secrets.json
+
+.vite
+.vscode
+node_modules
+dist
