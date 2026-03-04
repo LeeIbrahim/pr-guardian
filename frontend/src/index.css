@@ -1,0 +1,152 @@
+/* index.css */
+
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  color-scheme: dark;
+  /* Pure Black and White Theme */
+  background-color: #000000;
+  color: #ffffff;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body, html, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #000000;
+}
+
+/* Main Layout Wrapper */
+.page-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 40px;
+  min-height: 100vh;
+}
+
+/* Logo and Dropdown Section */
+.top-section {
+  width: 100%;
+  max-width: 1400px;
+  margin-bottom: 30px;
+}
+
+.logo {
+  font-size: 2.5rem;
+  margin-bottom: 15px;
+  color: #ffffff;
+}
+
+.select-container {
+  width: 100%;
+  max-width: 500px; /* Keep the dropdown a reasonable size */
+}
+
+/* Input Section: The Row containing Box + Side Buttons */
+.input-section {
+  width: 100%;
+  max-width: 1400px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.input-row {
+  display: flex;
+  flex-direction: row;
+  gap: 20px;
+  width: 100%;
+}
+
+/* The Main Code Input */
+.code-box {
+  flex: 1; /* Takes up all available horizontal space */
+  height: 65vh; /* Takes up 65% of screen height */
+  background-color: #111111;
+  color: #ffffff;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 20px;
+  font-family: 'Fira Code', 'Courier New', monospace;
+  font-size: 1rem;
+  resize: none;
+  outline: none;
+}
+
+.code-box:focus {
+  border-color: #ffffff;
+}
+
+/* Side Buttons Column */
+.side-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  justify-content: flex-start;
+  min-width: fit-content; /* Only as wide as the labels */
+}
+
+.upload-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.upload-group label:first-child {
+  font-size: 0.75rem;
+  color: #888;
+  text-transform: uppercase;
+  font-weight: bold;
+}
+
+/* General button styling for the side actions */
+.action-btn {
+  white-space: nowrap;
+  padding: 10px 18px;
+  background-color: #1a1a1a;
+  color: #ffffff;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 0.2s;
+}
+
+.action-btn:hover {
+  background-color: #333333;
+}
+
+/* Submit Button Row (Anchored Bottom-Left of the Input Box) */
+.submit-row {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.submit-btn {
+  background-color: #ffffff;
+  color: #000000;
+  font-weight: 800;
+  padding: 15px 40px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  transition: opacity 0.2s;
+}
+
+.submit-btn:hover {
+  opacity: 0.9;
+}
+
+/* React-Select specific overrides to ensure they don't break our theme */
+.select-container * {
+  color: black; /* Default text in dropdown should be black */
+}

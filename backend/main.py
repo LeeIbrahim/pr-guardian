@@ -1,7 +1,5 @@
 # main.py
-import os
 import json
-import asyncio
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -9,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from .graph import create_graph
+from graph import create_graph
 
 load_dotenv()
 
@@ -17,8 +15,11 @@ app = FastAPI(title="PR Guardian Backend")
 
 # Restricted origins for CORS implementation 
 origins = [
-    "https://localhost:8501",
-    "https://127.0.0.1:8501",
+    "https://localhost:5173",
+    "https://127.0.0.1:5173",
+
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
 ]
 
 app.add_middleware(
@@ -43,7 +44,10 @@ AVAILABLE_MODELS = {
 
 @app.get("/models")
 async def get_models():
-    return AVAILABLE_MODELS
+    return [
+        {"label": name, "value": model_id} 
+        for name, model_id in AVAILABLE_MODELS.items()
+    ]
 
 @app.post("/review")
 async def review_code(request: AuditRequest):

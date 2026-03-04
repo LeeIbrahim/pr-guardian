@@ -9,13 +9,17 @@ from dotenv import load_dotenv
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
-from pr_guardian.github_utils import fetch_commit_files
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+from .github_utils import fetch_commit_files
 
 load_dotenv()
 
-# # --- INITIALIZATION ---
+if os.getenv("ENVIRONMENT", "development"):
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+if "drive_current_folder" not in st.session_state:
+    st.session_state.drive_current_folder = 'root'
+if "drive_folder_stack" not in st.session_state:
+    st.session_state.drive_folder_stack = []
 if "available_models" not in st.session_state:
     st.session_state.available_models = {}
 if "credentials" not in st.session_state:
@@ -27,12 +31,10 @@ if "audit_results" not in st.session_state:
 
 st.set_page_config(page_title="PR Guardian", page_icon="🛡️", layout="wide")
 
-# # Load CSS
 if os.path.exists("style.css"):
     with open("style.css") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-# # Constants
 BACKEND_URL = os.getenv("BACKEND_URL", "https://127.0.0.1:8000")
 CLIENT_SECRETS_FILE = os.path.join(os.path.dirname(__file__), "client_secrets.json")
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
@@ -66,54 +68,62 @@ if "code" in st.query_params and st.session_state.credentials is None:
         st.rerun()
 
 # # --- GOOGLE DRIVE LOGIC ---
-@st.dialog("Google Drive Explorer", width="large")
+@st.dialog("Google Drive File Browser", width="large")
 def drive_explorer_dialog():
-    # # Navigation logic for back button
-    nav_col1, nav_col2 = st.columns([0.1, 0.9])
-    if st.session_state.drive_current_folder != 'root':
-        if nav_col1.button("⬅️"):
+    # # Header & Back Button
+    cols = st.columns([0.1, 0.7, 0.2])
+    if st.session_state.drive_folder_stack:
+        if cols[0].button("⬅️"):
             st.session_state.drive_current_folder = st.session_state.drive_folder_stack.pop()
             st.rerun()
     
-    nav_col2.subheader(f"Folder: {st.session_state.drive_current_folder}")
+    cols[1].markdown(f"**Location:** `{st.session_state.drive_current_folder}`")
+    
     st.divider()
 
-    # # Fetch items from Google Drive API
-    contents = list_user_drive_contents(st.session_state.drive_current_folder)
+    items = list_user_drive_contents(st.session_state.drive_current_folder)
     
-    if not contents:
-        st.info("This folder is empty or has no supported code files.")
+    if not items:
+        st.info("No supported files found here.")
 
-    for item in contents:
-        col_icon, col_name, col_action = st.columns([0.05, 0.7, 0.25])
+    for item in items:
+        c1, c2, c3 = st.columns([0.05, 0.75, 0.2])
         is_folder = item['mimeType'] == 'application/vnd.google-apps.folder'
+        icon = "📁" if is_folder else "📄"
         
+        c1.write(icon)
+        
+        # Navigation for folders
         if is_folder:
-            col_icon.write("📁")
-            if col_name.button(item['name'], key=f"fld_{item['id']}", use_container_width=True):
+            if c2.button(item['name'], key=f"nav_{item['id']}", use_container_width=True):
                 st.session_state.drive_folder_stack.append(st.session_state.drive_current_folder)
                 st.session_state.drive_current_folder = item['id']
                 st.rerun()
+            # Optional: Add whole folder logic here if needed
         else:
-            col_icon.write("📄")
-            col_name.write(item['name'])
+            c2.write(item['name'])
             
-            # # Check if already in the master staged_files list
-            is_added = any(f.get('id') == item['id'] for f in st.session_state.staged_files)
+            # Check if already added
+            already_added = any(f.get('id') == item['id'] for f in st.session_state.staged_files)
             
-            if is_added:
-                col_action.button("Staged", key=f"btn_{item['id']}", disabled=True, use_container_width=True)
+            if already_added:
+                c3.button("Added", key=f"add_{item['id']}", disabled=True, use_container_width=True)
             else:
-                if col_action.button("Add", key=f"btn_{item['id']}", use_container_width=True):
+                if c3.button("Select", key=f"add_{item['id']}", use_container_width=True):
                     content = download_drive_file(item['id'])
                     if content:
                         st.session_state.staged_files.append({
                             "id": item['id'],
-                            "name": item['name'],
-                            "content": content,
+                            "name": item['name'], 
+                            "content": content, 
                             "source": "Drive"
                         })
+                        st.toast(f"Added {item['name']}")
                         st.rerun()
+
+    st.divider()
+    if st.button("Close Explorer", use_container_width=True):
+        st.rerun()
 
 # # --- GOOGLE UTILS ---
 def list_user_drive_contents(folder_id='root'):
@@ -121,7 +131,6 @@ def list_user_drive_contents(folder_id='root'):
         return []
     try:
         service = build('drive', 'v3', credentials=st.session_state.credentials)
-        # # Query for folders and code-related files
         query = f"'{folder_id}' in parents and trashed = false"
         results = service.files().list(
             q=query, 
@@ -150,30 +159,35 @@ def download_drive_file(file_id):
 # # --- UI LAYOUT ---
 st.title("🛡️ PR Guardian")
 
-# # Configuration Row
 conf_col1, conf_col2 = st.columns([0.7, 0.3])
 
 with conf_col1:
     try:
+        # # verify=False for local self-signed certificates
         models_resp = requests.get(f"{BACKEND_URL}/models", verify=False, timeout=2)
         if models_resp.status_code == 200:
             st.session_state.available_models = models_resp.json()
-    except:
+    except Exception:
+        # # Silent fallback to avoid persistent error messages on the main screen
         if not st.session_state.available_models:
-            st.session_state.available_models = {"GPT-4o": "gpt-4o-latest", "Grok 3": "grok-3"}
+            st.session_state.available_models = {
+                "GPT-4o": "gpt-4o-latest",
+                "Grok 3": "grok-3",
+                "DeepSeek (Local)": "local/deepseek-r1",
+                "Llama 3 (Local)": "local/llama3"
+            }
 
-    # # Enforce max_selections=3 in the multiselect widget
     selected_labels = st.multiselect(
         "Select Audit Models (Max 3)", 
         options=list(st.session_state.available_models.keys()), 
-        default=list(st.session_state.available_models.keys())[:2],
+        default=list(st.session_state.available_models.keys())[:1], # Default to just one
         max_selections=3
     )
     selected_ids = [st.session_state.available_models[name] for name in selected_labels]
 
 st.divider()
 
-# # File Ingestion
+# File Ingestion
 st.markdown('<div class="paper-wrapper">', unsafe_allow_html=True)
 col_local, col_github, col_drive = st.columns(3)
 
@@ -199,51 +213,20 @@ with col_github:
 
 with col_drive:
     st.subheader("☁️ Google Drive")
-    
     if not st.session_state.credentials:
-        # # If not logged in, show the login button here as well as the header
         flow = get_google_auth_flow()
         if flow:
             auth_url, _ = flow.authorization_url(prompt='consent')
-            st.markdown(
-                f"""
-                <a href="{auth_url}" target="_self">
-                    <button style="
-                        background-color: #4285F4;
-                        color: white;
-                        border: none;
-                        padding: 10px 20px;
-                        border-radius: 4px;
-                        cursor: pointer;
-                        font-weight: bold;
-                        width: 100%;
-                    ">
-                        Sign in with Google
-                    </button>
-                </a>
-                """,
-                unsafe_allow_html=True
-            )
-        else:
-            st.error("client_secrets.json not found.")
+            st.link_button("🔑 Login with Google", auth_url, use_container_width=True)
     else:
-        # # If logged in, show the explorer trigger
-        if st.button("📂 Open Drive Explorer", use_container_width=True):
+        # # Main Entry Point
+        if st.button("📂 Browse Files", use_container_width=True):
             drive_explorer_dialog()
             
-        # # Show a mini-list of Drive files currently in the audit stage
-        drive_staged = [f for f in st.session_state.staged_files if f['source'] == "Drive"]
-        if drive_staged:
-            st.write("---")
-            for i, f in enumerate(drive_staged):
-                c_name, c_del = st.columns([0.8, 0.2])
-                c_name.caption(f"☁️ {f['name']}")
-                # # Find the index in the master list to delete correctly
-                if c_del.button("🗑️", key=f"drive_del_{i}"):
-                    st.session_state.staged_files = [sf for sf in st.session_state.staged_files if sf.get('id') != f.get('id')]
-                    st.rerun()
-        else:
-            st.info("No Drive files added to audit.")
+        # # Mini-Status
+        drive_count = len([f for f in st.session_state.staged_files if f.get('source') == "Drive"])
+        if drive_count > 0:
+            st.caption(f"✅ {drive_count} files selected from Drive")
 
 st.markdown('</div>', unsafe_allow_html=True)
 
@@ -260,7 +243,6 @@ if st.session_state.staged_files:
 
     audit_msg = st.text_area("Audit Instructions (Optional)", height=100)
     
-    # # Final Validation: Check for models and staged files
     if len(selected_ids) > 3:
         st.error("⚠️ Maximum of 3 models allowed. Please deselect some models above.")
         run_disabled = True
@@ -269,21 +251,34 @@ if st.session_state.staged_files:
         run_disabled = True
     else:
         run_disabled = False
-
+    
     if st.button("🚀 Start 5-Pillar Audit", type="primary", use_container_width=True, disabled=run_disabled):
         combined_code = ""
         for f in st.session_state.staged_files:
             combined_code += f"--- FILE: {f['name']} ---\n{f['content']}\n\n"
 
-        st.session_state.audit_results = ""
-        res_area = st.empty()
+        st.session_state.audit_results = {model: "" for model in selected_labels}
+
+        result_cols = st.columns(len(selected_labels))
+
+        placeholders = {model: result_cols[i].empty() for i, model in enumerate(selected_labels)}
+
         payload = {"code": combined_code, "model_names": selected_ids, "user_message": audit_msg}
+
         try:
             with requests.post(f"{BACKEND_URL}/review", json=payload, stream=True, verify=False) as r:
                 for line in r.iter_lines():
                     if line:
-                        data = json.loads(line.decode('utf-8').replace("data: ", ""))
-                        st.session_state.audit_results += f"### 🤖 {data['model']}\n{data['review']}\n\n"
-                        res_area.markdown(st.session_state.audit_results)
+                        raw_data = line.decode('utf-8').replace("data: ", "")
+                        data = json.loads(raw_data)
+
+                        model_name = data['model']
+                        review_text = data['review']
+                        
+                        st.session_state.audit_results[model_name] += f"{review_text}\n\n"
+                        
+                        with placeholders[model_name].container():
+                            st.markdown(f"### 🤖 {model_name}")
+                            st.markdown(st.session_state.audit_results[model_name])
         except Exception as e:
             st.error(f"Audit failed: {e}")
