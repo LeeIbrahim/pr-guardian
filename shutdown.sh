@@ -15,10 +15,11 @@ curl -X POST http://localhost:11434/api/generate -d '{"model": "deepseek-r1:1.5b
 
 # 3. Kill any lingering backend or frontend processes
 echo "🧹 Cleaning up lingering PR Guardian processes..."
-sudo fuser -k 8000/tcp 8501/tcp 2>/dev/null
+sudo -S fuser -k 8000/tcp 8501/tcp 2>/dev/null
 
 # 4. Optional: Stop the Ollama service entirely
 # Only uncomment if you want to turn off the model engine completely
-# sudo systemctl stop ollama
+echo "🛑 Stopping Ollama service..."
+sudo -S systemctl stop ollama
 
 echo "✅ All services and models have been shut down."
