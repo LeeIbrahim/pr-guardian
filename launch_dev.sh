@@ -1,30 +1,37 @@
 #!/bin/bash
 # launch_dev.sh
 
-GUI_PORT=8501
-UV="/home/forky/.local/bin/uv"
+# TODO: load port from .env or config file
+FRONTEND_PORT="${FRONTEND_PORT:-5173}"
+# TODO: load the UV path from .env or config file
+UV="${UV:-/home/forky/.local/bin/uv}"
 
 cleanup() {
-    echo -e "\n Shutting down Dev Services..."
-    [ -n "$GUI_PID" ] && kill $GUI_PID 2>/dev/null
+    echo -e "\n🛑 Shutting down Dev Services..."
+    [ -n "$FRONTEND_PID" ] && kill $FRONTEND_PID 2>/dev/null
     exit
 }
 trap cleanup INT TERM
 
-echo "🧹 Clearing GUI port..."
-sudo fuser -k $GUI_PORT/tcp 2>/dev/null
+# Starts Ollama in background if not running
+ollama serve > /dev/null 2>&1 & 
 
-echo "💻 Launching GUI with MKCERT SSL..."
-export PYTHONPATH=$PYTHONPATH:$(pwd)/src
+# Wait for Ollama service to be ready
+until curl -s http://localhost:11434/api/tags > /dev/null; do
+  echo "⏳ Waiting for Ollama service..."
+  sleep 1
+done
 
-# We MUST add the SSL flags here to stop the 'Record Too Long' error
-$UV run streamlit run gui.py \
-    --server.port $GUI_PORT \
-    --server.sslCertFile ./cert.pem \
-    --server.sslKeyFile ./key.pem &
-GUI_PID=$!
+# Pre-loads models into VRAM
+ollama run deepseek-r1:1.5b "" 
+ollama run llama3.2 ""
 
-echo -e "\n✅ GUI is running at https://localhost:8501"
+# Launching Vite Frontend
+echo "💻 Launching Vite Frontend..."
+cd frontend && npm run start &
+FRONTEND_PID=$!
+
+echo -e "\n✅ Services Ready."
 echo "👉 Now start the VS Code Debugger for the Backend (Port 8000)"
 
-wait $GUI_PID
+wait $FRONTEND_PID

@@ -2,7 +2,7 @@
 # launch.sh
 
 BACKEND_PORT=8000
-FRONTEND_PORT=8501
+FRONTEND_PORT=5173
 UV="/home/forky/.local/bin/uv"
 
 cleanup() {
@@ -14,32 +14,41 @@ cleanup() {
 }
 trap cleanup INT TERM
 
+# Clearing ports for Ollama, Backend, and Vite
 echo "🧹 Clearing ports..."
-sudo fuser -k 11435/tcp 8000/tcp 8501/tcp 2>/dev/null
+sudo fuser -k 11435/tcp 8000/tcp 5173/tcp 2>/dev/null
 
+# Starting Caddy Proxy
 echo "🛡️ Starting Caddy Proxy..."
 sudo caddy start --config ./Caddyfile
 sleep 2
 
 # Starting local llms
 echo "🦙 Checking Local Models (Ollama)..."
-ollama serve > /dev/null 2>&1 & # Starts Ollama in background if not running
-sleep 2
-ollama run deepseek-r1:1.5b "" # Pre-loads the model into VRAM
+# Starts Ollama in background if not running
+ollama serve > /dev/null 2>&1 & 
+
+# Wait for Ollama service to be ready
+until curl -s http://localhost:11434/api/tags > /dev/null; do
+  echo "⏳ Waiting for Ollama service..."
+  sleep 1
+done
+
+# Pre-loads models into VRAM
+ollama run deepseek-r1:1.5b "" 
 ollama run llama3.2 ""
 
+# Launching Backend
 echo "🚀 Launching Backend..."
-# Pointing directly to main:app in the root directory
 $UV run uvicorn backend.main:app \
     --host 127.0.0.1 --port $BACKEND_PORT \
     --ssl-keyfile ./key.pem --ssl-certfile ./cert.pem &
 BACKEND_PID=$!
 
-echo "💻 Launching GUI..."
-$UV run streamlit run gui.py \
-    --server.port $FRONTEND_PORT \
-    --server.sslCertFile ./cert.pem \
-    --server.sslKeyFile ./key.pem &
+# Launching Vite Frontend
+echo "💻 Launching Vite Frontend..."
+# Navigates to frontend folder and runs the dev command from package.json
+cd frontend && npm run start &
 FRONTEND_PID=$!
 
 wait
