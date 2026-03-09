@@ -1,20 +1,19 @@
 # main.py
 import asyncio
 import json
+import httpx
+import uvicorn
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
-import httpx
 from dotenv import load_dotenv
 from graph import create_graph
 
 load_dotenv()
 
-# Custom lifespan function to warm up local models on startup
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print('Warming up local models...')
@@ -87,6 +86,8 @@ async def review_code(request: AuditRequest):
         # Stream the individual model reviews back to the GUI 
         for model_id, review_text in result["reviews"].items():
             yield f"data: {json.dumps({'model': model_id, 'review': review_text})}\n\n"
+            # Yield control to ensure the chunk is sent
+            await asyncio.sleep(0)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 

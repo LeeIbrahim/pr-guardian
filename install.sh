@@ -24,7 +24,7 @@ else
     fi
 fi
 
-# 2. Local DNS Setup (Fixes [Errno -2])
+# 2. Local DNS Setup
 if ! grep -q "guardian.local" /etc/hosts; then
     echo -e "${YELLOW}Adding guardian.local to /etc/hosts (Sudo required)...${NC}"
     echo "127.0.0.1 guardian.local" | sudo tee -a /etc/hosts
@@ -39,6 +39,24 @@ if ! command -v caddy &> /dev/null; then
     sudo apt update && sudo apt install caddy -y
 fi
 
-# 4. uv Sync
+# 4. Backend Setup
+echo -e "${BLUE}Setting up Python backend...${NC}"
 uv sync
+
+# 5. Frontend Setup (React)
+if [ -d "frontend" ]; then
+    echo -e "${BLUE}Setting up React frontend...${NC}"
+    cd frontend
+    if ! command -v npm &> /dev/null; then
+        echo -e "${YELLOW}Warning: npm not found. Please install Node.js to build the frontend.${NC}"
+    else
+        npm install
+        echo -e "${YELLOW}Building production assets...${NC}"
+        npm run build
+    fi
+    cd ..
+else
+    echo -e "${YELLOW}Warning: Frontend directory not found. Skipping React setup.${NC}"
+fi
+
 echo -e "${GREEN}✅ Installation Complete.${NC}"
