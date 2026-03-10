@@ -1,6 +1,7 @@
 # main.py
 import asyncio
 import json
+import os
 import httpx
 import uvicorn
 from typing import List, Optional
@@ -32,14 +33,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PR Guardian Backend", lifespan=lifespan)
 
-# Restricted origins for CORS implementation 
+# Restricted origins for CORS implementation
 origins = [
     "https://localhost:5173",
     "https://127.0.0.1:5173",
-
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
 ]
+
+# Non https origins for ease of local development without needing to set up ssl certs for the frontend.
+environment = os.getenv("ENVIRONMENT")
+if environment == "development":
+    origins.extend([
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ])
 
 app.add_middleware(
     CORSMiddleware,
@@ -49,6 +55,7 @@ app.add_middleware(
     allow_headers=["*"], 
 )
 
+# TODO: put these into the env file or dynamically load it.
 AVAILABLE_MODELS = {
     "GPT-4o": "gpt-4o-latest",
     "Grok 3": "grok-3",
