@@ -41,7 +41,9 @@ fi
 
 # 4. Backend Setup
 echo -e "${BLUE}Setting up Python backend...${NC}"
+cd backend
 uv sync
+cd ..
 
 # 5. Frontend Setup (React)
 if [ -d "frontend" ]; then
