@@ -17,6 +17,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@types/google-one-tap": "^1.2.7",
+    "@types/google.picker": "^0.0.52",
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",

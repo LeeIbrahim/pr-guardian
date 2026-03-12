@@ -1,37 +1,50 @@
 #!/bin/bash
 # launch_dev.sh
 
-# TODO: load port from .env or config file
+# Load environment variables if .env exists
+if [ -f .env ]; then
+    set -a
+    source .env
+    set +a
+fi
+
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
-# TODO: load the UV path from .env or config file
-UV="${UV:-/home/forky/.local/bin/uv}"
+# Using the local secure address for consistent OAuth origins
+SECURE_URL="https://localhost:5173"
 
 cleanup() {
     echo -e "\n🛑 Shutting down Dev Services..."
     [ -n "$FRONTEND_PID" ] && kill $FRONTEND_PID 2>/dev/null
+    [ -n "$CADDY_PID" ] && kill $CADDY_PID 2>/dev/null
     exit
 }
 trap cleanup INT TERM
 
-# Starts Ollama in background if not running
+# Start Ollama
 ollama serve > /dev/null 2>&1 & 
 
-# Wait for Ollama service to be ready
 until curl -s http://localhost:11434/api/tags > /dev/null; do
   echo "⏳ Waiting for Ollama service..."
-  sleep 1
+  sleep 2
 done
 
-# Pre-loads models into VRAM
+# Pre-load models into VRAM
 ollama run deepseek-r1:1.5b "" 
 ollama run llama3.2 ""
 
-# Launching Vite Frontend
-echo "💻 Launching Vite Frontend..."
-cd frontend && npm run start &
+# Launching Vite Frontend (Internal Port)
+echo "💻 Launching Vite Frontend on http://localhost:3000..."
+cd frontend && npm run dev -- --port 3000 &
 FRONTEND_PID=$!
 
+# Launching Caddy as an HTTPS Proxy
+# This uses 'caddy reverse-proxy' to wrap the HTTP Vite server in HTTPS
+echo "🛡️ Starting Caddy HTTPS Proxy at $SECURE_URL..."
+caddy reverse-proxy --from localhost:5173 --to localhost:3000 > /dev/null 2>&1 &
+CADDY_PID=$!
+
 echo -e "\n✅ Services Ready."
-echo "👉 Now start the VS Code Debugger for the Backend (Port 8000)"
+echo "👉 Frontend (Secure): $SECURE_URL"
+echo "👉 Start the Backend Debugger (Port 8000) with SSL enabled"
 
 wait $FRONTEND_PID

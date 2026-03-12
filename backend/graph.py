@@ -11,8 +11,6 @@ load_dotenv()
 # API Keys and Endpoint configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-# Using the secure Caddy proxy address defined in install.sh and Caddyfile
-# TODO: ENV file this url.
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL")
 
 # The 5-Pillar Audit logic defined in README.md

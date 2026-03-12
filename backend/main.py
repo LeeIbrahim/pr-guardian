@@ -35,8 +35,8 @@ app = FastAPI(title="PR Guardian Backend", lifespan=lifespan)
 
 # Restricted origins for CORS implementation
 origins = [
-    "https://localhost:5173",
-    "https://127.0.0.1:5173",
+    "https://localhost:3000",
+    "https://127.0.0.1:3000",
 ]
 
 # Non https origins for ease of local development without needing to set up ssl certs for the frontend.

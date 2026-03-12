@@ -1,14 +1,17 @@
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import fs from 'fs';
 
-export default {
+export default defineConfig({
   plugins: [react()],
   server: {
-    port: 5173,
-    https: {
-      key: fs.readFileSync('./key.pem'),
-      cert: fs.readFileSync('./cert.pem'),
-    },
+    // Port 3000 is used because Caddy proxies from 5173 -> 3000
+    port: 3000, 
+    strictPort: true,
     host: 'localhost',
+    hmr: {
+      protocol: 'wss',
+      host: 'localhost',
+      clientPort: 5173,
+    },
   },
-};
+});
