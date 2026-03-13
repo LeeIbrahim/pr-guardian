@@ -36,7 +36,8 @@ if environment == "development":
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    # TODO: This is to test the deploy. Change this back after testing.
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"], 
@@ -88,7 +89,7 @@ async def review_code(request: AuditRequest):
 if __name__ == "__main__":
     uvicorn.run(
         "main:app", 
-        host="127.0.0.1", 
+        host=os.getenv("VITE_BACKEND_URL"), 
         port=8000, 
         ssl_keyfile="./key.pem", 
         ssl_certfile="./cert.pem"
