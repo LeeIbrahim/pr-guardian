@@ -27,6 +27,7 @@ declare global {
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const CLIENT_API_KEY = import.meta.env.VITE_GOOGLE_CLIENT_API_KEY || ''; 
 const SCOPES = "https://www.googleapis.com/auth/drive.readonly";
+const BACKEND = import.meta.env.VITE_BACKEND_URL;
 
 function App() {
   const [models, setModels] = useState<MyOption[]>([]);
@@ -42,7 +43,7 @@ function App() {
   useEffect(() => {
     const fetchModels = async () => {
       try {
-        const response = await fetch('https://127.0.0.1:8000/models');
+        const response = await fetch(`${BACKEND}/models`);
         if (response.ok) {
           const data = await response.json();
           setModels(data);
@@ -167,7 +168,7 @@ function App() {
     setResults({});
 
     try {
-      const response = await fetch('https://127.0.0.1:8000/review', {
+      const response = await fetch(`${BACKEND}/review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
