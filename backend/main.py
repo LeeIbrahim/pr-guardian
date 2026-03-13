@@ -15,23 +15,9 @@ from graph import create_graph
 
 load_dotenv()
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    print('Warming up local models...')
-    async with httpx.AsyncClient() as client:
-        try:
-            await client.post("http://localhost:11434/api/generate", 
-                json={"model": "deepseek-r1:1.5b", "keep_alive": -1})
-            await client.post("http://localhost:11434/api/generate", 
-                json={"model": "llama3.2", "keep_alive": -1})
-        except Exception as e:
-            print(f"⚠️ Model warm-up failed: {e}")
-            loop = asyncio.get_event_loop()
-            loop.stop()
-            return
-        yield
+# TODO: Add a health check endpoint.
 
-app = FastAPI(title="PR Guardian Backend", lifespan=lifespan)
+app = FastAPI(title="PR Guardian Backend")
 
 # Restricted origins for CORS implementation
 origins = [
@@ -59,8 +45,8 @@ app.add_middleware(
 AVAILABLE_MODELS = {
     "GPT-4o": "gpt-4o-latest",
     "Grok 3": "grok-3",
-    "DeepSeek R1 (Local)": "local/deepseek-r1:1.5b",
-    "Llama 3.2 (Local)": "local/llama3.2"
+    #"DeepSeek R1 (Local)": "local/deepseek-r1:1.5b",
+    #"Llama 3.2 (Local)": "local/llama3.2"
 }
 
 class AuditRequest(BaseModel):
