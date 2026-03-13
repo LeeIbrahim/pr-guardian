@@ -41,15 +41,22 @@ function App() {
 
   // Fetch models from backend on mount
   useEffect(() => {
+    let fetches = 0
     const fetchModels = async () => {
       try {
+        
         const response = await fetch(`${BACKEND}/models`);
         if (response.ok) {
           const data = await response.json();
           setModels(data);
         }
       } catch (err) {
-        console.error("Error fetching models:", err);
+        console.error("Error fetching() models:", err);
+        if (fetches < 4) {
+          fetches++;
+          setTimeout(fetchModels, 1000);
+          return;
+        }
       }
     };
     fetchModels();
