@@ -2,65 +2,57 @@
 import asyncio
 import json
 import os
-import httpx
 import uvicorn
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from graph import create_graph
 
 load_dotenv()
 
-# TODO: Add a health check endpoint.
-
 app = FastAPI(title="PR Guardian Backend")
 
 # Restricted origins for CORS implementation
 origins = [
-    "https://localhost:3000",
-    "https://127.0.0.1:3000",
     "https://pr-guardian-ui.onrender.com"
 ]
 
-# Non https origins for ease of local development without needing to set up ssl certs for the frontend.
+# Dev routes to make it easier to work in the dev environments and sometimes not use ssl.
 environment = os.getenv("ENVIRONMENT")
 if environment == "development":
     origins.extend([
+        "https://localhost:3000",
+        "http://localhost:3000",
+
+        "https://127.0.0.1:3000",
+        "http://127.0.0.1:3000",
+        
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ])
 
 app.add_middleware(
     CORSMiddleware,
-    # TODO: This is to test the deploy. Change this back after testing.
-    allow_origins=["*"],
+    allow_origins=[origins],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"], 
 )
-
-# TODO: put these into the env file or dynamically load it.
-AVAILABLE_MODELS = {
-    "GPT-4o": "gpt-4o-latest",
-    "Grok 3": "grok-3",
-    #"DeepSeek R1 (Local)": "local/deepseek-r1:1.5b",
-    #"Llama 3.2 (Local)": "local/llama3.2"
-}
 
 class AuditRequest(BaseModel):
     code: str
     model_names: List[str]
     user_message: Optional[str] = ""
 
+# This effectively works as a health check.
 @app.get("/models")
 async def get_models():
     return [
         {"label": name, "value": model_id} 
-        for name, model_id in AVAILABLE_MODELS.items()
+        for name, model_id in os.getenv("VITE_AVAILABLE_MODELS").items()
     ]
 
 @app.post("/review")
