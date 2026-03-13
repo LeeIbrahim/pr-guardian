@@ -23,6 +23,7 @@ app = FastAPI(title="PR Guardian Backend")
 origins = [
     "https://localhost:3000",
     "https://127.0.0.1:3000",
+    "https://pr-guardian-ui.onrender.com"
 ]
 
 # Non https origins for ease of local development without needing to set up ssl certs for the frontend.
