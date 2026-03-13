@@ -28,6 +28,7 @@ const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const CLIENT_API_KEY = import.meta.env.VITE_GOOGLE_CLIENT_API_KEY || ''; 
 const SCOPES = "https://www.googleapis.com/auth/drive.readonly";
 const BACKEND = import.meta.env.VITE_BACKEND_URL;
+const GITHUB_API = "https://github.com";
 
 function App() {
   const [models, setModels] = useState<MyOption[]>([]);
@@ -36,18 +37,23 @@ function App() {
   const [results, setResults] = useState<Record<string, string>>({});
   const [loadingModels, setLoadingModels] = useState<Set<string>>(new Set());
   const [fileList, setFileList] = useState<FileEntry[]>([]);
+  const [repoUrl, setRepoUrl] = useState<string>('');
+  const [stagedFiles, setStagedFiles] = useState<{path: string, url: string}[]>([]);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Fetch models from backend on mount
+  // Temporary fix to handle the spin down of back end and needing to load it up.
   useEffect(() => {
     const loadModels = async () => {
-      return Object.entries(import.meta.env.VITE_AVAILABLE_MODELS).map(([name, model_id]) => ({
+      setModels(Object.entries(import.meta.env.VITE_AVAILABLE_MODELS).map(([name, model_id]) => ({
           label: name,
           value: model_id
-      }));
+      })));
     };
     loadModels();
+
+    // Loads backend into memory of render (deployment site) by spinning it up.
+    fetch(BACKEND, { method: 'GET'}).then(() => console.log("Loaded backend"));
   }, []);
 
   // Update file sidebar and calculate boundaries whenever code changes
@@ -203,6 +209,58 @@ function App() {
       selectedOptions.forEach(o => errResults[o.value] = errorMsg);
       setResults(errResults);
       setLoadingModels(new Set());
+    }
+  };
+
+  const handleGitHubPull = async () => {
+    if (!repoUrl) return;
+
+    try {
+      // Parse owner and repo.
+      const urlParts = repoUrl.replace('https://github.com/', '').split('/');
+      
+      if (urlParts.length < 2) throw new Error("Invalid GitHub URL");
+
+      const [owner, repo] = urlParts;
+
+      const repoRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`);
+      const repoData = await repoRes.json();
+      // TODO: implement user selection of branches.
+      const branch = repoData.default_branch;
+
+      const treeRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`);
+      const treeData = await treeRes.json();
+
+      const codeFiles = treeData.tree
+        .filter((f: any) => f.type === 'blob' && /\.(ts|tsx|js|jsx|py|cs|java|cpp|go|rs)$/.test(f.path))
+        .map((f: any) => ({
+          path: f.path,
+          url: `${GITHUB_API}/repos/${owner}/${repo}/contents/${f.path}?ref=${branch}`
+        }));
+
+      setStagedFiles(codeFiles);
+
+    } catch (error: any) {
+      alert("GutHub Pull Failed:" + error.message);
+    }
+  }
+
+  const importStagedFile = async (file: {path: string, url: string}) => {
+    try {
+      const res = await fetch(file.url);
+      const data = await res.json();
+      const content = atob(data.content.replace(/\n/g, ''));
+
+      setCode(prev => {
+        const sep = prev.trim() ? "\n\n" : "";
+        return `${prev}${sep}--- File: ${file.path} ---\n${content}`;
+      });
+
+      setStagedFiles(prev => prev.filter(f => f.path !== file.path));
+
+    } catch (error: any) {
+      alert("Import Failed:" + error.message);
+      console.error(error);
     }
   };
 
