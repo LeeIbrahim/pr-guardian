@@ -37,18 +37,23 @@ function App() {
   const [results, setResults] = useState<Record<string, string>>({});
   const [loadingModels, setLoadingModels] = useState<Set<string>>(new Set());
   const [fileList, setFileList] = useState<FileEntry[]>([]);
+  const [repoUrl, setRepoUrl] = useState<string>('');
+  const [stagedFiles, setStagedFiles] = useState<{path: string, url: string}[]>([]);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Fetch models from backend on mount
+  // Temporary fix to handle the spin down of back end and needing to load it up.
   useEffect(() => {
     const loadModels = async () => {
-      return Object.entries(import.meta.env.VITE_AVAILABLE_MODELS).map(([name, model_id]) => ({
+      setModels(Object.entries(import.meta.env.VITE_AVAILABLE_MODELS).map(([name, model_id]) => ({
           label: name,
           value: model_id
-      }));
+      })));
     };
     loadModels();
+
+    // Loads backend into memory of render (deployment site) by spinning it up.
+    fetch(BACKEND, { method: 'GET'}).then(() => console.log("Loaded backend"));
   }, []);
 
   // Update file sidebar and calculate boundaries whenever code changes
