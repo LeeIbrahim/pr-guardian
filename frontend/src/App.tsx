@@ -28,7 +28,6 @@ const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const CLIENT_API_KEY = import.meta.env.VITE_GOOGLE_CLIENT_API_KEY || ''; 
 const SCOPES = "https://www.googleapis.com/auth/drive.readonly";
 const BACKEND = import.meta.env.VITE_BACKEND_URL;
-const GITHUB_API = "https://github.com";
 
 function App() {
   const [models, setModels] = useState<MyOption[]>([]);
@@ -42,6 +41,10 @@ function App() {
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  function sleep(ms = 0) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
   // Temporary fix to handle the spin down of back end and needing to load it up.
   useEffect(() => {
     const loadModels = async () => {
@@ -54,6 +57,9 @@ function App() {
 
     // Loads backend into memory of render (deployment site) by spinning it up.
     fetch(BACKEND, { method: 'GET'}).then(() => console.log("Loaded backend"));
+  
+    // Sleep three seconds to let the backend spin up.
+    sleep(3000);
   }, []);
 
   // Update file sidebar and calculate boundaries whenever code changes
@@ -212,58 +218,6 @@ function App() {
     }
   };
 
-  const handleGithubPull = async () => {
-    if (!repoUrl) return;
-
-    try {
-      // Parse owner and repo.
-      const urlParts = repoUrl.replace('https://github.com/', '').split('/');
-      
-      if (urlParts.length < 2) throw new Error("Invalid GitHub URL");
-
-      const [owner, repo] = urlParts;
-
-      const repoRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`);
-      const repoData = await repoRes.json();
-      // TODO: implement user selection of branches.
-      const branch = repoData.default_branch;
-
-      const treeRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`);
-      const treeData = await treeRes.json();
-
-      const codeFiles = treeData.tree
-        .filter((f: any) => f.type === 'blob' && /\.(ts|tsx|js|jsx|py|cs|java|cpp|go|rs)$/.test(f.path))
-        .map((f: any) => ({
-          path: f.path,
-          url: `${GITHUB_API}/repos/${owner}/${repo}/contents/${f.path}?ref=${branch}`
-        }));
-
-      setStagedFiles(codeFiles);
-
-    } catch (error: any) {
-      alert("GutHub Pull Failed:" + error.message);
-    }
-  }
-
-  const importStagedFile = async (file: {path: string, url: string}) => {
-    try {
-      const res = await fetch(file.url);
-      const data = await res.json();
-      const content = atob(data.content.replace(/\n/g, ''));
-
-      setCode(prev => {
-        const sep = prev.trim() ? "\n\n" : "";
-        return `${prev}${sep}--- File: ${file.path} ---\n${content}`;
-      });
-
-      setStagedFiles(prev => prev.filter(f => f.path !== file.path));
-
-    } catch (error: any) {
-      alert("Import Failed:" + error.message);
-      console.error(error);
-    }
-  };
-
   const customStyles: StylesConfig<MyOption, true, GroupBase<MyOption>> = {
     control: (base) => ({
       ...base,
@@ -326,42 +280,17 @@ function App() {
         </div>
 
         <aside className="sidebar">
-          <div className="github-tools">
-            <input 
-              type="text" 
-              placeholder="Repo URL..." 
-              value={repoUrl} 
-              onChange={(e) => setRepoUrl(e.target.value)} 
-            />
-            <button onClick={handleGithubPull}>Fetch Repo</button>
-          </div>
-
-          {stagedFiles.length > 0 && (
-            <div className="staged-section">
-              <h3>Available in Repo</h3>
-              <div className="file-list staged">
-                {stagedFiles.map((file, i) => (
-                  <div key={i} className="file-item staged">
-                    <span className="file-path">{file.path}</span>
-                    <button className="add-file-btn" onClick={() => importStagedFile(file)}>+</button>
-                  </div>
-                ))}
+          <h3>Project Files</h3>
+          <div className="file-list">
+            {fileList.length === 0 && <p className="empty-msg">No files detected</p>}
+            {fileList.map((file, i) => (
+              <div key={i} className="file-item">
+                <span className="file-link" onClick={() => scrollToSection(file.startLine)}>
+                  📄 {file.name}
+                </span>
+                <button className="remove-file-btn" onClick={() => removeFile(file)}>×</button>
               </div>
-            </div>
-          )}
-
-          <div className="active-section">
-            <h3>Active in Editor</h3>
-            <div className="file-list">
-              {fileList.map((file, i) => (
-                <div key={i} className="file-item">
-                  <span className="file-link" onClick={() => scrollToSection(file.startLine)}>
-                    📄 {file.name}
-                  </span>
-                  <button className="remove-file-btn" onClick={() => removeFile(file)}>×</button>
-                </div>
-              ))}
-            </div>
+            ))}
           </div>
         </aside>
       </main>
