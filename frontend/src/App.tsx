@@ -28,6 +28,8 @@ const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const CLIENT_API_KEY = import.meta.env.VITE_GOOGLE_CLIENT_API_KEY || ''; 
 const SCOPES = "https://www.googleapis.com/auth/drive.readonly";
 const BACKEND = import.meta.env.VITE_BACKEND_URL;
+const GITHUB_API = "https://api.github.com";
+
 
 function App() {
   const [models, setModels] = useState<MyOption[]>([]);
